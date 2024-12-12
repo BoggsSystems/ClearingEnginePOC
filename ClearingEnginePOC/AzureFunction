@@ -1,0 +1,122 @@
+const { v4: uuidv4 } = require("uuid");
+
+let trades = []; // In-memory trade storage for simplicity (replace with database in production)
+let settlementInstructions = []; // In-memory settlement instructions
+
+module.exports = async function (context, req) {
+    context.log("Received a request to process a trade...");
+    context.log(`Request body: ${JSON.stringify(req.body)}`);
+
+    try {
+        // Step 1: Validate input
+        const trade = req.body;
+        if (!trade || !trade.buyer || !trade.seller || !trade.instrument || !trade.quantity || !trade.price) {
+            context.log.error("Invalid trade details provided.");
+            context.res = {
+                status: 400,
+                body: { error: "Invalid trade details. All fields are required." },
+            };
+            return;
+        }
+
+        // Step 2: Capture the trade
+        trade.id = uuidv4(); // Generate a unique ID for the trade
+        trades.push(trade); // Add trade to in-memory store
+        context.log(`Trade captured and stored: ${JSON.stringify(trade)}`);
+
+        // Step 3: Match the trade (simplified matching logic)
+        const matchedTrade = matchTrade(trade);
+        context.log(
+            matchedTrade
+                ? `Trade successfully matched: ${JSON.stringify(matchedTrade)}`
+                : "No matching trade found."
+        );
+
+        // Step 4: Netting calculation (simplified)
+        const nettingResult = calculateNetting(trade, matchedTrade);
+        context.log(
+            nettingResult
+                ? `Netting result: ${JSON.stringify(nettingResult)}`
+                : "No netting performed."
+        );
+
+        // Step 5: Generate settlement instructions
+        const settlementInstruction = matchedTrade
+            ? generateSettlementInstruction(matchedTrade)
+            : null;
+
+        if (settlementInstruction) {
+            settlementInstructions.push(settlementInstruction);
+            context.log(`Settlement instruction generated: ${settlementInstruction}`);
+        } else {
+            context.log("No settlement instruction generated.");
+        }
+
+        // Step 6: Respond with structured results
+        const response = {
+            trade,
+            matchedTrade: matchedTrade || null,
+            nettingResult: nettingResult || null,
+            settlementInstruction: settlementInstruction || null,
+        };
+
+        context.log(`Response prepared: ${JSON.stringify(response)}`);
+        context.res = {
+            status: 200,
+            body: response,
+        };
+    } catch (error) {
+        context.log.error(`Error processing trade: ${error.message}`);
+        context.res = {
+            status: 500,
+            body: { error: "An error occurred while processing the trade." },
+        };
+    }
+};
+
+// Match the trade against existing trades (simplified matching logic)
+function matchTrade(trade) {
+    for (let existingTrade of trades) {
+        if (
+            existingTrade.instrument === trade.instrument &&
+            existingTrade.price === trade.price &&
+            existingTrade.buyer !== trade.buyer &&
+            existingTrade.seller !== trade.seller
+        ) {
+            return {
+                id: existingTrade.id,
+                buyer: existingTrade.buyer,
+                seller: existingTrade.seller,
+                instrument: existingTrade.instrument,
+                quantity: Math.min(existingTrade.quantity, trade.quantity),
+                price: existingTrade.price,
+            };
+        }
+    }
+    return null; // No match found
+}
+
+// Perform netting calculation (simplified)
+function calculateNetting(trade, matchedTrade) {
+    if (!matchedTrade) {
+        return null;
+    }
+    const netPosition = trade.quantity - matchedTrade.quantity;
+    return {
+        tradeId: trade.id,
+        counterparty: trade.buyer,
+        netPosition,
+    };
+}
+
+// Generate settlement instruction (mock SWIFT-like format)
+function generateSettlementInstruction(matchedTrade) {
+    return `
+        SETTLEMENT INSTRUCTION:
+        BUYER: ${matchedTrade.buyer}
+        SELLER: ${matchedTrade.seller}
+        INSTRUMENT: ${matchedTrade.instrument}
+        QUANTITY: ${matchedTrade.quantity}
+        PRICE: ${matchedTrade.price}
+    `;
+}
